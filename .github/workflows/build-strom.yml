@@ -1,0 +1,77 @@
+
+name: Build Strom Launcher
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Strom repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android dependencies
+        run: |
+          sdkmanager --install \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;24.0.8215888" \
+            "cmake;3.22.1"
+
+          yes | sdkmanager --licenses || true
+
+      - name: Download Winlator engine
+        run: |
+          git clone https://github.com/brunodev85/winlator.git upstream
+          cd upstream
+          git checkout 30aafbdb9eea47b92669201621e03cd2cf04540d
+          git submodule sync --recursive
+          git submodule update --init --recursive
+
+      - name: Apply Strom customization
+        run: |
+          python3 .github/scripts/prepare_strom.py upstream
+
+      - name: Build Android APK
+        working-directory: upstream/app
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Package APK
+        run: |
+          mkdir -p dist
+
+          cp upstream/app/app/build/outputs/apk/debug/app-debug.apk \
+            dist/Strom-Launcher-debug.apk
+
+          tar --exclude='.git' --exclude='*/.git' \
+            -czf dist/Strom-Launcher-source.tar.gz \
+            -C upstream .
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Strom-Launcher
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+          
